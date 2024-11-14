@@ -1,6 +1,6 @@
 use rand::Rng;
 use lazy_static::lazy_static;
-use std::io::{self, Write};
+use std::{collections::btree_map::Values, io::{self, Write}, vec};
 
 pub enum Input {
     Coordinates(i32, i32),
@@ -136,7 +136,7 @@ pub fn get_and_parse_input() -> Input {
     Input::Invalid
 }
 
-pub fn handle_input_and_return_block(user:bool, number_block:&Vec<Vec<i32>>)->(Vec<Vec<char>>,(i32,i32)) {
+pub fn handle_input_and_return_block_ij(user:bool, number_block:&Vec<Vec<i32>>)->(Vec<Vec<char>>,(i32,i32)) {
     let mut rotated_block= number_block.clone();
     loop {
         match get_and_parse_input() {
@@ -146,7 +146,11 @@ pub fn handle_input_and_return_block(user:bool, number_block:&Vec<Vec<i32>>)->(V
                     println!("Invalid input. Integer must be in range -1 to 9");
                 }
                 else {
-                    return (laminate_block(user, &rotated_block), (x,y))
+                    //inner board는 2~10의 범위와 외부가 매칭 되므로, x와 y에 값을 +1해 주었음.
+                    // 1행,1열에 위치시킨단 입력은 실은 i=2,j=2에 위치시키겠단 뜻과 동일.
+                    let i= x+1;
+                    let j= y+1;
+                    return (laminate_block(user, &rotated_block), (i,j))
                 }
             }
             Input::Rotate => {
@@ -219,9 +223,98 @@ pub fn get_rotated_xy (dot_xy_list:Vec<(i32,i32)>)->Vec<(i32,i32)>{
     return rotated_list;
 }
 
+pub fn validate_coordination(board:&Vec<Vec<char>>, block: &Vec<Vec<char>>, i: i32,j: i32)->bool{
+    let mut scope:Vec<Vec<char>>= vec![vec!['_','_','_'],vec!['_','_','_'],vec!['_','_','_'],];
+    let i_start = i as usize;
+    let i_end= (i+2) as usize;
+    let j_start= j as usize;
+    let j_end= (j+2) as usize;
+    
+    //스코프 생성하기. 스코프= 코디네이트 될 지역 가져오기
+    for (i,row) in board.iter().enumerate(){
+        if i<i_start||i> i_end {continue;}
+        for (j, &val) in row.iter().enumerate(){
+            if j<j_start || j>j_end{ continue;}
+            scope[i-i_start][j-j_start]= val;
+        }
+    }
+    //display_block(&scope);
+
+    //스코프에 대해서 점령 검증
+    let mut is_conflict= false;
+    'outer: for (i, row) in block.iter().enumerate(){
+        for (j,_) in row.iter().enumerate(){
+            if block[i][j]!='_' && scope[i][j] != '_' {
+                is_conflict=true;
+                //println!("conflict with i={i}, j={j}");
+                break 'outer;
+            }
+            }
+    }
+    
+    let is_validate= ! is_conflict;
+    return is_validate;
+
+
+
+}
+
+pub fn coordinate_block (board:&mut Vec<Vec<char>>, block:&Vec<Vec<char>>,i:i32, j:i32){
+    let start_i=i as usize;
+    let start_j=j as usize;
+    for (r, row) in block.iter().enumerate(){
+        for (c, v) in row.iter().enumerate(){
+            //블록의 '_'부분은 다른 지역 덮어씌우면 안됨.
+            // 블록의 문자 부분 대해서만 반영.
+            if *v!= '_' {
+                board[start_i+r][start_j+c]=*v;
+            }
+        }
+    }
+
+}
+
+
+pub fn possibility_check (board:&Vec<Vec<char>>, number_block: &Vec<Vec<i32>>)-> bool{
+
+    //처음엔 가능한 케이스를 발견하지 못한 상태.
+    let mut is_possible= false;
+
+    //회전을 고려한 4가지 케이스 생성
+    let mut block_versions: Vec<Vec<Vec<i32>>>= Vec::new();
+    let mut rotated_case= number_block.clone();
+    for _ in 0..4 {
+        let copied= rotated_case.clone();
+        block_versions.push(copied);
+        rotated_case= rotate_block(&rotated_case);
+    }
+
+    let laminated_versions: Vec<Vec<Vec<char>>>= block_versions.iter().map(
+        |number_block: &Vec<Vec<i32>>| laminate_block(true, number_block)).collect();
+
+    //각 케이스에 대해 탐색
+    'outer: for (_, l_version) in laminated_versions.iter().enumerate() {
+        for i in 0..10 {
+            for j in 0..10{
+                //한 케이스에 대해서라도 맞으면 바로 리턴
+                let is_validate= validate_coordination(board, l_version, i, j);
+                if is_validate {
+                    is_possible=true;
+                    break 'outer;
+                }
+            }
+        }
+    }
+    
+    return is_possible
+}
 
 #[cfg(test)]
 mod tests {
+    use lazy_static::initialize;
+
+    use crate::initialize_board;
+
     use super::*;
     #[test]
     fn test_get_xy_list(){
@@ -238,4 +331,16 @@ mod tests {
         let rotated_xy_list = get_rotated_xy(befor_xy_list);
         assert_eq!(rotated_xy_list,vec![(-1,-1),(-1,1),(0,-1)]);
     }
+
+    #[test]
+    fn test_validate_check (){
+        let board= initialize_board();
+        let block= vec![
+            vec!['_','_','_'],
+            vec!['_','_','_'],
+            vec!['l','l','l'],
+        ];
+        assert_eq!(true, validate_coordination(&board, &block, -1, 2));
+    }
+
 }

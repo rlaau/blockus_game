@@ -67,6 +67,10 @@ pub fn display_board (board: &Vec<Vec<char>>){
 
 
 
+
+
+
+
 pub fn do_turns(board:Vec<Vec<char>>){
     let user:bool=true;
 
